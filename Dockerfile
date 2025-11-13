@@ -16,6 +16,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /server .
+COPY --from=builder /app/openapi.yaml .
 
 EXPOSE 8080
 
