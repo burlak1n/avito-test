@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 
 	"github.com/reviewer-service/internal/models"
@@ -23,7 +25,11 @@ func NewTeamService(teamRepo repository.TeamRepository, logger *slog.Logger) *Te
 func (s *TeamService) CreateTeam(ctx context.Context, team *models.Team) error {
 	s.logger.InfoContext(ctx, "creating team", "team_name", team.TeamName)
 
-	existing, _ := s.teamRepo.GetByName(team.TeamName)
+	existing, err := s.teamRepo.GetByName(team.TeamName)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		s.logger.ErrorContext(ctx, "failed to check team existence", "error", err, "team_name", team.TeamName)
+		return err
+	}
 	if existing != nil {
 		s.logger.WarnContext(ctx, "team already exists", "team_name", team.TeamName)
 		return ErrTeamExists
@@ -43,8 +49,12 @@ func (s *TeamService) GetTeam(ctx context.Context, teamName string) (*models.Tea
 
 	team, err := s.teamRepo.GetByName(teamName)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "team not found", "error", err, "team_name", teamName)
-		return nil, ErrTeamNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "team not found", "error", err, "team_name", teamName)
+			return nil, ErrTeamNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get team", "error", err, "team_name", teamName)
+		return nil, err
 	}
 
 	return team, nil

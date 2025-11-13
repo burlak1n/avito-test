@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -32,8 +33,14 @@ func (h *TeamHandler) AddTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.CreateTeam(ctx, &team); err != nil {
-		// OpenAPI: 400 Bad Request с кодом TEAM_EXISTS
-		respondError(w, http.StatusBadRequest, "TEAM_EXISTS", "team_name already exists")
+		if errors.Is(err, service.ErrTeamExists) {
+			// OpenAPI: 400 Bad Request с кодом TEAM_EXISTS
+			respondError(w, http.StatusBadRequest, "TEAM_EXISTS", "team_name already exists")
+		} else {
+			// Ошибки БД или другие ошибки репозитория
+			h.logger.ErrorContext(ctx, "failed to create team", "error", err, "team_name", team.TeamName)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		}
 		return
 	}
 
@@ -53,8 +60,14 @@ func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 
 	team, err := h.service.GetTeam(ctx, teamName)
 	if err != nil {
-		// OpenAPI: 404 Not Found с кодом NOT_FOUND
-		respondError(w, http.StatusNotFound, "NOT_FOUND", "Team not found")
+		if errors.Is(err, service.ErrTeamNotFound) {
+			// OpenAPI: 404 Not Found с кодом NOT_FOUND
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "Team not found")
+		} else {
+			// Ошибки БД или другие ошибки репозитория
+			h.logger.ErrorContext(ctx, "failed to get team", "error", err, "team_name", teamName)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		}
 		return
 	}
 

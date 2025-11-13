@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 	"math/rand"
 	"time"
@@ -27,7 +29,11 @@ func NewPullRequestService(prRepo repository.PullRequestRepository, userRepo rep
 func (s *PullRequestService) CreatePR(ctx context.Context, prID, prName, authorID string) (*models.PullRequest, error) {
 	s.logger.InfoContext(ctx, "creating PR", "pr_id", prID, "author_id", authorID)
 
-	existing, _ := s.prRepo.GetByID(prID)
+	existing, err := s.prRepo.GetByID(prID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		s.logger.ErrorContext(ctx, "failed to check PR existence", "error", err, "pr_id", prID)
+		return nil, err
+	}
 	if existing != nil {
 		s.logger.WarnContext(ctx, "PR already exists", "pr_id", prID)
 		return nil, ErrPRExists
@@ -35,8 +41,12 @@ func (s *PullRequestService) CreatePR(ctx context.Context, prID, prName, authorI
 
 	author, err := s.userRepo.GetByID(authorID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "author not found", "error", err, "author_id", authorID)
-		return nil, ErrAuthorNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "author not found", "error", err, "author_id", authorID)
+			return nil, ErrAuthorNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get author", "error", err, "author_id", authorID)
+		return nil, err
 	}
 
 	candidates, err := s.userRepo.GetActiveTeamMembers(author.TeamName, authorID)
@@ -72,8 +82,12 @@ func (s *PullRequestService) MergePR(ctx context.Context, prID string) (*models.
 
 	pr, err := s.prRepo.GetByID(prID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "PR not found", "error", err, "pr_id", prID)
-		return nil, ErrPRNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "PR not found", "error", err, "pr_id", prID)
+			return nil, ErrPRNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get PR", "error", err, "pr_id", prID)
+		return nil, err
 	}
 
 	if pr.Status == "MERGED" {
@@ -87,7 +101,17 @@ func (s *PullRequestService) MergePR(ctx context.Context, prID string) (*models.
 	}
 
 	s.logger.InfoContext(ctx, "PR merged successfully", "pr_id", prID)
-	return s.prRepo.GetByID(prID)
+
+	mergedPR, err := s.prRepo.GetByID(prID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to fetch merged PR, returning updated PR manually", "error", err, "pr_id", prID)
+		now := time.Now()
+		pr.Status = "MERGED"
+		pr.MergedAt = &now
+		return pr, nil
+	}
+
+	return mergedPR, nil
 }
 
 func (s *PullRequestService) ReassignReviewer(ctx context.Context, prID, oldUserID string) (*models.PullRequest, string, error) {
@@ -95,8 +119,12 @@ func (s *PullRequestService) ReassignReviewer(ctx context.Context, prID, oldUser
 
 	pr, err := s.prRepo.GetByID(prID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "PR not found", "error", err, "pr_id", prID)
-		return nil, "", ErrPRNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "PR not found", "error", err, "pr_id", prID)
+			return nil, "", ErrPRNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get PR", "error", err, "pr_id", prID)
+		return nil, "", err
 	}
 
 	if pr.Status == "MERGED" {
@@ -118,8 +146,12 @@ func (s *PullRequestService) ReassignReviewer(ctx context.Context, prID, oldUser
 
 	oldUser, err := s.userRepo.GetByID(oldUserID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "old reviewer not found", "error", err, "user_id", oldUserID)
-		return nil, "", ErrUserNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "old reviewer not found", "error", err, "user_id", oldUserID)
+			return nil, "", ErrUserNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get old reviewer", "error", err, "user_id", oldUserID)
+		return nil, "", err
 	}
 
 	candidates, err := s.userRepo.GetActiveTeamMembers(oldUser.TeamName, oldUserID)
@@ -164,6 +196,10 @@ func (s *PullRequestService) ReassignReviewer(ctx context.Context, prID, oldUser
 
 	updatedPR, err := s.prRepo.GetByID(prID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "updated PR not found", "error", err, "pr_id", prID)
+			return nil, "", ErrPRNotFound
+		}
 		s.logger.ErrorContext(ctx, "failed to fetch updated PR", "error", err, "pr_id", prID)
 		return nil, "", err
 	}

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 
 	"github.com/reviewer-service/internal/models"
@@ -25,10 +27,14 @@ func NewUserService(userRepo repository.UserRepository, prRepo repository.PullRe
 func (s *UserService) SetUserActive(ctx context.Context, userID string, isActive bool) (*models.User, error) {
 	s.logger.InfoContext(ctx, "updating user activity", "user_id", userID, "is_active", isActive)
 
-	user, err := s.userRepo.GetByID(userID)
+	_, err := s.userRepo.GetByID(userID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "user not found", "error", err, "user_id", userID)
-		return nil, ErrUserNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "user not found", "error", err, "user_id", userID)
+			return nil, ErrUserNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get user", "error", err, "user_id", userID)
+		return nil, err
 	}
 
 	updatedUser, err := s.userRepo.UpdateActivity(userID, isActive)
@@ -46,8 +52,12 @@ func (s *UserService) GetUserReviews(ctx context.Context, userID string) ([]*mod
 
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "user not found", "error", err, "user_id", userID)
-		return nil, ErrUserNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			s.logger.ErrorContext(ctx, "user not found", "error", err, "user_id", userID)
+			return nil, ErrUserNotFound
+		}
+		s.logger.ErrorContext(ctx, "failed to get user", "error", err, "user_id", userID)
+		return nil, err
 	}
 
 	reviews, err := s.prRepo.GetByReviewerID(user.UserID)

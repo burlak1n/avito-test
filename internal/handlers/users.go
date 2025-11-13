@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -35,8 +36,14 @@ func (h *UserHandler) SetUserActive(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.service.SetUserActive(ctx, req.UserID, req.IsActive)
 	if err != nil {
-		// OpenAPI: 404 Not Found с кодом NOT_FOUND
-		respondError(w, http.StatusNotFound, "NOT_FOUND", "User not found")
+		if errors.Is(err, service.ErrUserNotFound) {
+			// OpenAPI: 404 Not Found с кодом NOT_FOUND
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "User not found")
+		} else {
+			// Ошибки БД или другие ошибки репозитория
+			h.logger.ErrorContext(ctx, "failed to set user active", "error", err, "user_id", req.UserID)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		}
 		return
 	}
 
@@ -56,9 +63,15 @@ func (h *UserHandler) GetUserReviews(w http.ResponseWriter, r *http.Request) {
 
 	reviews, err := h.service.GetUserReviews(ctx, userID)
 	if err != nil {
-		// OpenAPI: возвращает 200 даже если пользователя нет, с пустым списком
-		// Но для консистентности можно возвращать 404
-		respondError(w, http.StatusNotFound, "NOT_FOUND", "User not found")
+		if errors.Is(err, service.ErrUserNotFound) {
+			// OpenAPI: возвращает 200 даже если пользователя нет, с пустым списком
+			// Но для консистентности можно возвращать 404
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "User not found")
+		} else {
+			// Ошибки БД или другие ошибки репозитория
+			h.logger.ErrorContext(ctx, "failed to get user reviews", "error", err, "user_id", userID)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		}
 		return
 	}
 
