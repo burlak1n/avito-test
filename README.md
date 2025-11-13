@@ -16,10 +16,26 @@ docker-compose up
 .
 ├── cmd/server/          # Точка входа приложения
 ├── internal/
-│   ├── handlers/        # HTTP обработчики
-│   ├── models/          # Модели данных
-│   └── storage/         # Слой работы с БД
+│   ├── handlers/        # HTTP обработчики (разделены по доменам)
+│   │   ├── teams.go
+│   │   ├── users.go
+│   │   ├── pull_requests.go
+│   │   └── common.go
+│   ├── service/         # Бизнес-логика (service layer)
+│   │   ├── team_service.go
+│   │   ├── user_service.go
+│   │   └── pr_service.go
+│   ├── repository/      # Репозитории (разделены по доменам)
+│   │   ├── team_repository.go
+│   │   ├── user_repository.go
+│   │   └── pr_repository.go
+│   ├── middleware/      # HTTP middleware
+│   │   └── logging.go
+│   ├── config/          # Конфигурация
+│   │   └── config.go
+│   └── models/          # Модели данных
 ├── migrations/          # SQL миграции
+├── .golangci.yml        # Конфигурация линтера
 ├── docker-compose.yml
 ├── Dockerfile
 ├── Makefile
@@ -52,6 +68,67 @@ make test     # Запустить тесты
 - PostgreSQL 16
 - Docker & Docker Compose
 - Gorilla Mux (HTTP router)
+
+## Архитектура
+
+Проект следует принципам **Clean Architecture**:
+
+- **Handlers** — парсинг запросов, валидация входных данных
+- **Service** — вся бизнес-логика (выбор ревьюеров, проверки состояний)
+- **Repository** — доступ к данным (интерфейсы разделены по доменам)
+- **Middleware** — кросс-функциональные задачи (логирование HTTP)
+- **Config** — централизованная конфигурация
+- **Models** — структуры данных
+
+### Разделение интерфейсов (тонкие интерфейсы)
+
+Вместо одного толстого интерфейса, создано **3 репозитория**:
+
+- `TeamRepository` — работа с командами (2 метода)
+- `UserRepository` — работа с пользователями (3 метода)
+- `PullRequestRepository` — работа с PR (5 методов)
+
+### Context-aware операции
+
+Все методы принимают `context.Context`:
+- Поддержка таймаутов и отмены операций
+- Передача trace ID для распределенного трейсинга
+- Best practice для Go
+
+### Логирование
+
+**slog** (стандартная библиотека Go):
+- Service слой: бизнес-события
+- Handlers: ошибки валидации
+- Middleware: HTTP запросы (метод, путь, статус, длительность)
+- JSON формат для production
+- Чувствительные данные не логируются
+
+### Graceful Shutdown
+
+Корректное завершение при SIGINT/SIGTERM:
+- Завершение активных запросов
+- Timeout 10 секунд
+- Закрытие соединений с БД
+
+### Что реализовано
+
+✅ Clean Architecture с service слоем  
+✅ Разделение handlers по доменам  
+✅ Тонкие интерфейсы репозиториев  
+✅ Context-aware методы  
+✅ Структурированное логирование (slog)  
+✅ HTTP logging middleware  
+✅ Graceful shutdown  
+✅ Централизованная конфигурация  
+✅ Настроенный линтер (.golangci.yml)  
+✅ Таймауты для HTTP сервера  
+✅ Логика выбора ревьюеров  
+✅ Идемпотентность merge  
+
+### Что осталось
+
+- Реализовать SQL методы в репозиториях
 
 ## Допущения и решения
 
