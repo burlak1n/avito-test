@@ -7,6 +7,7 @@ tags:
   - name: Teams
   - name: Users
   - name: PullRequests
+  - name: Statistics
   - name: Health
 
 components:
@@ -43,6 +44,7 @@ components:
                 - NOT_ASSIGNED
                 - NO_CANDIDATE
                 - NOT_FOUND
+                - INVALID_TEAM_MEMBER
             message:
               type: string
       example:
@@ -120,6 +122,54 @@ components:
         status:
           type: string
           enum: [OPEN, MERGED]
+    ReviewerAssignment:
+      type: object
+      required: [ user_id, count ]
+      properties:
+        user_id:
+          type: string
+        count:
+          type: integer
+    Statistics:
+      type: object
+      required: [ teams, users, pull_requests, review_assignments ]
+      properties:
+        teams:
+          type: object
+          required: [ total ]
+          properties:
+            total:
+              type: integer
+        users:
+          type: object
+          required: [ total, active, inactive ]
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            inactive:
+              type: integer
+        pull_requests:
+          type: object
+          required: [ total, open, merged ]
+          properties:
+            total:
+              type: integer
+            open:
+              type: integer
+            merged:
+              type: integer
+        review_assignments:
+          type: object
+          required: [ total, by_reviewer ]
+          properties:
+            total:
+              type: integer
+            by_reviewer:
+              type: array
+              items:
+                $ref: '#/components/schemas/ReviewerAssignment'
 
 paths:
   /team/add:
@@ -196,6 +246,70 @@ paths:
                   - user_id: u2
                     username: Bob
                     is_active: true
+        '404':
+          description: Команда не найдена
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /team/deactivateMembers:
+    post:
+      tags: [Teams]
+      summary: Массовая деактивация пользователей команды с переназначением PR
+      description: |
+        Деактивирует указанных пользователей команды и безопасно переназначает их открытые PR:
+        - PR, где пользователь является автором, переназначаются на активных членов команды
+        - PR, где пользователь является ревьювером, удаляют его из ревьюверов и добавляют нового если возможно
+        - Использует транзакции для атомарности операции
+        - Оптимизировано для работы в пределах 100 мс для средних объёмов данных
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [team_name, user_ids]
+              properties:
+                team_name:
+                  type: string
+                  description: Имя команды
+                user_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Список ID пользователей для деактивации
+            example:
+              team_name: backend
+              user_ids: ["u1", "u2"]
+      responses:
+        '200':
+          description: Успешная деактивация
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deactivated_users, reassigned_prs]
+                properties:
+                  deactivated_users:
+                    type: array
+                    items:
+                      type: string
+                    description: Список деактивированных пользователей
+                  reassigned_prs:
+                    type: integer
+                    description: Количество переназначенных PR
+              example:
+                deactivated_users: ["u1", "u2"]
+                reassigned_prs: 5
+        '400':
+          description: Некорректный запрос или пользователи не из указанной команды
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                error:
+                  code: INVALID_TEAM_MEMBER
+                  message: One or more users are not members of the specified team
         '404':
           description: Команда не найдена
           content:
@@ -438,3 +552,43 @@ paths:
                     pull_request_name: Add search
                     author_id: u1
                     status: OPEN
+
+  /statistics:
+    get:
+      tags: [Statistics]
+      summary: Получить статистику по командам, пользователям, PR и назначениям ревьюверов
+      security:
+        - AdminToken: []
+        - UserToken: []
+      responses:
+        '200':
+          description: Статистика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statistics'
+              example:
+                teams:
+                  total: 5
+                users:
+                  total: 20
+                  active: 18
+                  inactive: 2
+                pull_requests:
+                  total: 150
+                  open: 12
+                  merged: 138
+                review_assignments:
+                  total: 280
+                  by_reviewer:
+                    - user_id: u1
+                      count: 45
+                    - user_id: u2
+                      count: 38
+                    - user_id: u3
+                      count: 32
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }

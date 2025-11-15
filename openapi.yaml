@@ -44,6 +44,7 @@ components:
                 - NOT_ASSIGNED
                 - NO_CANDIDATE
                 - NOT_FOUND
+                - INVALID_TEAM_MEMBER
             message:
               type: string
       example:
@@ -245,6 +246,70 @@ paths:
                   - user_id: u2
                     username: Bob
                     is_active: true
+        '404':
+          description: Команда не найдена
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /team/deactivateMembers:
+    post:
+      tags: [Teams]
+      summary: Массовая деактивация пользователей команды с переназначением PR
+      description: |
+        Деактивирует указанных пользователей команды и безопасно переназначает их открытые PR:
+        - PR, где пользователь является автором, переназначаются на активных членов команды
+        - PR, где пользователь является ревьювером, удаляют его из ревьюверов и добавляют нового если возможно
+        - Использует транзакции для атомарности операции
+        - Оптимизировано для работы в пределах 100 мс для средних объёмов данных
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [team_name, user_ids]
+              properties:
+                team_name:
+                  type: string
+                  description: Имя команды
+                user_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Список ID пользователей для деактивации
+            example:
+              team_name: backend
+              user_ids: ["u1", "u2"]
+      responses:
+        '200':
+          description: Успешная деактивация
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deactivated_users, reassigned_prs]
+                properties:
+                  deactivated_users:
+                    type: array
+                    items:
+                      type: string
+                    description: Список деактивированных пользователей
+                  reassigned_prs:
+                    type: integer
+                    description: Количество переназначенных PR
+              example:
+                deactivated_users: ["u1", "u2"]
+                reassigned_prs: 5
+        '400':
+          description: Некорректный запрос или пользователи не из указанной команды
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                error:
+                  code: INVALID_TEAM_MEMBER
+                  message: One or more users are not members of the specified team
         '404':
           description: Команда не найдена
           content:

@@ -38,6 +38,3 @@ func (s *StatisticsService) GetStatistics(ctx context.Context) (*models.Statisti
 
 	return stats, nil
 }
-
-
-

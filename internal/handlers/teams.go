@@ -74,3 +74,32 @@ func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {
 	// OpenAPI: 200 OK, возвращаем Team напрямую
 	respondJSON(w, http.StatusOK, team)
 }
+
+func (h *TeamHandler) DeactivateTeamMembers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req struct {
+		TeamName string   `json:"team_name"`
+		UserIDs  []string `json:"user_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.WarnContext(ctx, "invalid request body", "error", err)
+		respondError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid request body")
+		return
+	}
+
+	result, err := h.service.DeactivateTeamMembers(ctx, req.TeamName, req.UserIDs)
+	if err != nil {
+		if errors.Is(err, service.ErrTeamNotFound) || errors.Is(err, service.ErrUserNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "Team or user not found")
+		} else if errors.Is(err, service.ErrInvalidTeamMember) {
+			respondError(w, http.StatusBadRequest, "INVALID_TEAM_MEMBER", "One or more users are not members of the specified team")
+		} else {
+			h.logger.ErrorContext(ctx, "failed to deactivate team members", "error", err, "team_name", req.TeamName)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		}
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}

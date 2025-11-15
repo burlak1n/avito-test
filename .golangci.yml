@@ -1,6 +1,7 @@
 run:
   timeout: 5m
   tests: true
+  modules-download-mode: readonly
 
 linters:
   enable:
@@ -22,6 +23,10 @@ linters-settings:
   
   govet:
     check-shadowing: true
+    enable-all: false
+  
+  goimports:
+    local-prefixes: github.com/reviewer-service
   
   revive:
     rules:
@@ -31,6 +36,14 @@ linters-settings:
         severity: warning
       - name: context-as-argument
         severity: warning
+      - name: error-return
+        severity: warning
+      - name: if-return
+        severity: warning
+  
+  gosec:
+    severity: medium
+    confidence: medium
 
 issues:
   exclude-rules:
@@ -38,4 +51,8 @@ issues:
       linters:
         - errcheck
         - gosec
+    - path: cmd/server/main.go
+      text: "Error return value of .* is not checked"
+      linters:
+        - errcheck
 
