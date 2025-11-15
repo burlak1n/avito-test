@@ -45,3 +45,28 @@ type ErrorDetail struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+type Statistics struct {
+	Teams struct {
+		Total int `json:"total"`
+	} `json:"teams"`
+	Users struct {
+		Total    int `json:"total"`
+		Active   int `json:"active"`
+		Inactive int `json:"inactive"`
+	} `json:"users"`
+	PullRequests struct {
+		Total  int `json:"total"`
+		Open   int `json:"open"`
+		Merged int `json:"merged"`
+	} `json:"pull_requests"`
+	ReviewAssignments struct {
+		Total        int                    `json:"total"`
+		ByReviewer   []ReviewerAssignment   `json:"by_reviewer"`
+	} `json:"review_assignments"`
+}
+
+type ReviewerAssignment struct {
+	UserID  string `json:"user_id"`
+	Count   int    `json:"count"`
+}

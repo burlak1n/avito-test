@@ -7,6 +7,7 @@ tags:
   - name: Teams
   - name: Users
   - name: PullRequests
+  - name: Statistics
   - name: Health
 
 components:
@@ -120,6 +121,54 @@ components:
         status:
           type: string
           enum: [OPEN, MERGED]
+    ReviewerAssignment:
+      type: object
+      required: [ user_id, count ]
+      properties:
+        user_id:
+          type: string
+        count:
+          type: integer
+    Statistics:
+      type: object
+      required: [ teams, users, pull_requests, review_assignments ]
+      properties:
+        teams:
+          type: object
+          required: [ total ]
+          properties:
+            total:
+              type: integer
+        users:
+          type: object
+          required: [ total, active, inactive ]
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            inactive:
+              type: integer
+        pull_requests:
+          type: object
+          required: [ total, open, merged ]
+          properties:
+            total:
+              type: integer
+            open:
+              type: integer
+            merged:
+              type: integer
+        review_assignments:
+          type: object
+          required: [ total, by_reviewer ]
+          properties:
+            total:
+              type: integer
+            by_reviewer:
+              type: array
+              items:
+                $ref: '#/components/schemas/ReviewerAssignment'
 
 paths:
   /team/add:
@@ -438,3 +487,43 @@ paths:
                     pull_request_name: Add search
                     author_id: u1
                     status: OPEN
+
+  /statistics:
+    get:
+      tags: [Statistics]
+      summary: Получить статистику по командам, пользователям, PR и назначениям ревьюверов
+      security:
+        - AdminToken: []
+        - UserToken: []
+      responses:
+        '200':
+          description: Статистика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statistics'
+              example:
+                teams:
+                  total: 5
+                users:
+                  total: 20
+                  active: 18
+                  inactive: 2
+                pull_requests:
+                  total: 150
+                  open: 12
+                  merged: 138
+                review_assignments:
+                  total: 280
+                  by_reviewer:
+                    - user_id: u1
+                      count: 45
+                    - user_id: u2
+                      count: 38
+                    - user_id: u3
+                      count: 32
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
