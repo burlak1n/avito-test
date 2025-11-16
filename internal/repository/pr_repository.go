@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 
+	"github.com/lib/pq"
 	"github.com/reviewer-service/internal/models"
 )
 
@@ -73,7 +74,7 @@ func (r *pullRequestRepository) GetByID(prID string) (*models.PullRequest, error
 		GROUP BY pr.pull_request_id, pr.pull_request_name, pr.author_id, pr.status, pr.created_at, pr.merged_at`
 
 	var pr models.PullRequest
-	var reviewers []string
+	var reviewers pq.StringArray
 	var createdAt, mergedAt sql.NullTime
 
 	err := r.db.QueryRow(query, prID).Scan(
@@ -187,7 +188,7 @@ func (r *pullRequestRepository) GetOpenPRsByAuthors(userIDs []string) ([]*models
 		WHERE pr.author_id = ANY($1) AND pr.status = 'OPEN'
 		GROUP BY pr.pull_request_id, pr.pull_request_name, pr.author_id, pr.status`
 
-	rows, err := r.db.Query(query, userIDs)
+	rows, err := r.db.Query(query, pq.Array(userIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +197,7 @@ func (r *pullRequestRepository) GetOpenPRsByAuthors(userIDs []string) ([]*models
 	prs := make([]*models.PullRequest, 0)
 	for rows.Next() {
 		pr := &models.PullRequest{}
-		var reviewers []string
+		var reviewers pq.StringArray
 		if err := rows.Scan(&pr.PullRequestID, &pr.PullRequestName, &pr.AuthorID, &pr.Status, &reviewers); err != nil {
 			return nil, err
 		}
@@ -220,7 +221,7 @@ func (r *pullRequestRepository) GetOpenPRsByReviewers(userIDs []string) (map[str
 		WHERE prr.reviewer_id = ANY($1) AND pr.status = 'OPEN'
 		GROUP BY prr.reviewer_id, pr.pull_request_id, pr.pull_request_name, pr.author_id, pr.status`
 
-	rows, err := r.db.Query(query, userIDs)
+	rows, err := r.db.Query(query, pq.Array(userIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +231,7 @@ func (r *pullRequestRepository) GetOpenPRsByReviewers(userIDs []string) (map[str
 	for rows.Next() {
 		var reviewerID string
 		pr := &models.PullRequest{}
-		var reviewers []string
+		var reviewers pq.StringArray
 		if err := rows.Scan(&reviewerID, &pr.PullRequestID, &pr.PullRequestName, &pr.AuthorID, &pr.Status, &reviewers); err != nil {
 			return nil, err
 		}

@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 
+	"github.com/lib/pq"
 	"github.com/reviewer-service/internal/models"
 )
 
@@ -88,7 +89,7 @@ func (r *userRepository) DeactivateUsers(tx *sql.Tx, userIDs []string) error {
 	}
 
 	query := `UPDATE users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE user_id = ANY($1)`
-	_, err := tx.Exec(query, userIDs)
+	_, err := tx.Exec(query, pq.Array(userIDs))
 	return err
 }
 
@@ -98,7 +99,7 @@ func (r *userRepository) GetUsersByIDs(userIDs []string) ([]*models.User, error)
 	}
 
 	query := `SELECT user_id, username, team_name, is_active FROM users WHERE user_id = ANY($1)`
-	rows, err := r.db.Query(query, userIDs)
+	rows, err := r.db.Query(query, pq.Array(userIDs))
 	if err != nil {
 		return nil, err
 	}

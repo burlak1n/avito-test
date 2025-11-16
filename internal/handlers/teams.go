@@ -44,8 +44,15 @@ func (h *TeamHandler) AddTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	created, err := h.service.GetTeam(ctx, team.TeamName)
+	if err != nil {
+		h.logger.ErrorContext(ctx, "failed to get created team", "error", err, "team_name", team.TeamName)
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		return
+	}
+
 	// OpenAPI: 201 Created с { "team": {...} }
-	respondJSON(w, http.StatusCreated, map[string]interface{}{"team": team})
+	respondJSON(w, http.StatusCreated, map[string]interface{}{"team": created})
 }
 
 func (h *TeamHandler) GetTeam(w http.ResponseWriter, r *http.Request) {

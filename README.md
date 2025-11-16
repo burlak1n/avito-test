@@ -64,11 +64,14 @@ docker-compose up
 ## Команды Makefile
 
 ```bash
-make build    # Собрать Docker образ
-make run      # Запустить сервис
-make stop     # Остановить сервис
-make clean    # Остановить и удалить volumes
-make test     # Запустить тесты
+make build             # Собрать Docker образ
+make run               # Запустить сервис
+make stop              # Остановить сервис
+make clean             # Остановить и удалить volumes
+make test              # Запустить все тесты (unit + integration)
+make test-unit         # Запустить только unit-тесты
+make test-integration  # Запустить интеграционные E2E-тесты
+make lint              # Запустить линтер
 ```
 
 ## Технологии
@@ -134,10 +137,10 @@ make test     # Запустить тесты
 ✅ Таймауты для HTTP сервера  
 ✅ Логика выбора ревьюеров  
 ✅ Идемпотентность merge  
-
-### Что осталось
-
-- Реализовать SQL методы в репозиториях
+✅ Unit-тесты для handlers  
+✅ Интеграционные E2E-тесты  
+✅ Статистика API  
+✅ Массовая деактивация пользователей команды
 
 ### Конфигурация линтера
 
@@ -176,10 +179,60 @@ make test     # Запустить тесты
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # Запустить проверку
+make lint
+# или
 golangci-lint run
 
 # Запустить с автоисправлением
 golangci-lint run --fix
+```
+
+## Тестирование
+
+Проект включает два типа тестов:
+
+### Unit-тесты
+
+Unit-тесты используют моки и тестируют изолированные компоненты (handlers, service):
+
+```bash
+make test-unit
+```
+
+Примеры:
+- `internal/handlers/pull_requests_test.go` - тестирование HTTP handlers
+- `internal/service/pr_service_test.go` - тестирование бизнес-логики
+- `internal/repository/team_repository_test.go` - тестирование репозиториев
+
+### Интеграционные E2E-тесты
+
+E2E-тесты используют реальную PostgreSQL базу данных и проверяют полные сценарии работы:
+
+```bash
+make test-integration
+```
+
+Тесты покрывают:
+- ✅ Полный flow создания команды → PR → merge
+- ✅ Автоназначение ревьюверов (до 2 активных из команды автора)
+- ✅ Переназначение ревьювера на другого участника команды
+- ✅ Проверка, что неактивные пользователи не назначаются
+- ✅ Массовая деактивация членов команды
+- ✅ Идемпотентность операции merge
+- ✅ Запрет на изменение ревьюверов после merge
+- ✅ Проверка статистики
+
+Расположение: `internal/integration/integration_test.go`
+
+**Требования:** 
+- PostgreSQL автоматически поднимается через `docker-compose.test.yml` на порту 5433
+- Тесты используют переменные окружения: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- После выполнения тестов БД автоматически останавливается
+
+### Запуск всех тестов
+
+```bash
+make test
 ```
 
 ## Допущения и решения
