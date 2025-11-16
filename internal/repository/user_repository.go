@@ -23,18 +23,63 @@ func NewUserRepository(db *sql.DB) UserRepository {
 }
 
 func (r *userRepository) GetByID(userID string) (*models.User, error) {
-	// TODO: implement
-	return nil, nil
+	query := `SELECT user_id, username, team_name, is_active FROM users WHERE user_id = $1`
+	var user models.User
+	err := r.db.QueryRow(query, userID).Scan(&user.UserID, &user.Username, &user.TeamName, &user.IsActive)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *userRepository) UpdateActivity(userID string, isActive bool) (*models.User, error) {
-	// TODO: implement
-	return nil, nil
+	query := `UPDATE users SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2 RETURNING user_id, username, team_name, is_active`
+	var user models.User
+	err := r.db.QueryRow(query, isActive, userID).Scan(&user.UserID, &user.Username, &user.TeamName, &user.IsActive)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *userRepository) GetActiveTeamMembers(teamName string, excludeUserID string) ([]*models.User, error) {
-	// TODO: implement
-	return nil, nil
+	var query string
+	var args []interface{}
+
+	if excludeUserID != "" {
+		query = `SELECT user_id, username, team_name, is_active FROM users WHERE team_name = $1 AND is_active = true AND user_id != $2 ORDER BY user_id`
+		args = []interface{}{teamName, excludeUserID}
+	} else {
+		query = `SELECT user_id, username, team_name, is_active FROM users WHERE team_name = $1 AND is_active = true ORDER BY user_id`
+		args = []interface{}{teamName}
+	}
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]*models.User, 0)
+	for rows.Next() {
+		var user models.User
+		if err := rows.Scan(&user.UserID, &user.Username, &user.TeamName, &user.IsActive); err != nil {
+			return nil, err
+		}
+		users = append(users, &user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }
 
 func (r *userRepository) DeactivateUsers(tx *sql.Tx, userIDs []string) error {

@@ -28,28 +28,150 @@ func NewPullRequestRepository(db *sql.DB) PullRequestRepository {
 }
 
 func (r *pullRequestRepository) Create(pr *models.PullRequest) error {
-	// TODO: implement
-	return nil
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var createdAt interface{}
+	if pr.CreatedAt != nil {
+		createdAt = pr.CreatedAt
+	}
+
+	query := `INSERT INTO pull_requests (pull_request_id, pull_request_name, author_id, status, created_at) VALUES ($1, $2, $3, $4, $5)`
+	_, err = tx.Exec(query, pr.PullRequestID, pr.PullRequestName, pr.AuthorID, pr.Status, createdAt)
+	if err != nil {
+		return err
+	}
+
+	if len(pr.AssignedReviewers) > 0 {
+		stmt, err := tx.Prepare(`INSERT INTO pr_reviewers (pull_request_id, reviewer_id) VALUES ($1, $2)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, reviewerID := range pr.AssignedReviewers {
+			_, err = stmt.Exec(pr.PullRequestID, reviewerID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (r *pullRequestRepository) GetByID(prID string) (*models.PullRequest, error) {
-	// TODO: implement
-	return nil, nil
+	query := `
+		SELECT pr.pull_request_id, pr.pull_request_name, pr.author_id, pr.status, pr.created_at, pr.merged_at,
+		       COALESCE(array_agg(prr.reviewer_id) FILTER (WHERE prr.reviewer_id IS NOT NULL), '{}') as reviewers
+		FROM pull_requests pr
+		LEFT JOIN pr_reviewers prr ON pr.pull_request_id = prr.pull_request_id
+		WHERE pr.pull_request_id = $1
+		GROUP BY pr.pull_request_id, pr.pull_request_name, pr.author_id, pr.status, pr.created_at, pr.merged_at`
+
+	var pr models.PullRequest
+	var reviewers []string
+	var createdAt, mergedAt sql.NullTime
+
+	err := r.db.QueryRow(query, prID).Scan(
+		&pr.PullRequestID,
+		&pr.PullRequestName,
+		&pr.AuthorID,
+		&pr.Status,
+		&createdAt,
+		&mergedAt,
+		&reviewers,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
+	}
+
+	if createdAt.Valid {
+		pr.CreatedAt = &createdAt.Time
+	}
+	if mergedAt.Valid {
+		pr.MergedAt = &mergedAt.Time
+	}
+	pr.AssignedReviewers = reviewers
+
+	return &pr, nil
 }
 
 func (r *pullRequestRepository) UpdateStatus(prID string, status string) error {
-	// TODO: implement
-	return nil
+	var query string
+	if status == "MERGED" {
+		query = `UPDATE pull_requests SET status = $1, merged_at = CURRENT_TIMESTAMP WHERE pull_request_id = $2`
+	} else {
+		query = `UPDATE pull_requests SET status = $1 WHERE pull_request_id = $2`
+	}
+	_, err := r.db.Exec(query, status, prID)
+	return err
 }
 
 func (r *pullRequestRepository) UpdateReviewers(prID string, reviewers []string) error {
-	// TODO: implement
-	return nil
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`DELETE FROM pr_reviewers WHERE pull_request_id = $1`, prID)
+	if err != nil {
+		return err
+	}
+
+	if len(reviewers) > 0 {
+		stmt, err := tx.Prepare(`INSERT INTO pr_reviewers (pull_request_id, reviewer_id) VALUES ($1, $2)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, reviewerID := range reviewers {
+			_, err = stmt.Exec(prID, reviewerID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (r *pullRequestRepository) GetByReviewerID(userID string) ([]*models.PullRequestShort, error) {
-	// TODO: implement
-	return nil, nil
+	query := `
+		SELECT DISTINCT pr.pull_request_id, pr.pull_request_name, pr.author_id, pr.status
+		FROM pull_requests pr
+		JOIN pr_reviewers prr ON pr.pull_request_id = prr.pull_request_id
+		WHERE prr.reviewer_id = $1
+		ORDER BY pr.pull_request_id`
+
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	prs := make([]*models.PullRequestShort, 0)
+	for rows.Next() {
+		var pr models.PullRequestShort
+		if err := rows.Scan(&pr.PullRequestID, &pr.PullRequestName, &pr.AuthorID, &pr.Status); err != nil {
+			return nil, err
+		}
+		prs = append(prs, &pr)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return prs, nil
 }
 
 func (r *pullRequestRepository) GetOpenPRsByAuthors(userIDs []string) ([]*models.PullRequest, error) {
