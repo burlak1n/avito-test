@@ -1,16 +1,24 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 
+	"github.com/reviewer-service/internal/models"
 	"github.com/reviewer-service/internal/service"
 )
 
+type PRService interface {
+	CreatePR(ctx context.Context, prID, prName, authorID string) (*models.PullRequest, error)
+	MergePR(ctx context.Context, prID string) (*models.PullRequest, error)
+	ReassignReviewer(ctx context.Context, prID, oldUserID string) (*models.PullRequest, string, error)
+}
+
 type PullRequestHandler struct {
-	service *service.PullRequestService
+	service PRService
 	logger  *slog.Logger
 }
 
@@ -42,9 +50,11 @@ func (h *PullRequestHandler) CreatePR(w http.ResponseWriter, r *http.Request) {
 		// - 409 Conflict с кодом PR_EXISTS: PR уже существует
 		if errors.Is(err, service.ErrPRExists) {
 			respondError(w, http.StatusConflict, "PR_EXISTS", "PR id already exists")
-		} else {
-			// Автор не найден
+		} else if errors.Is(err, service.ErrAuthorNotFound) {
 			respondError(w, http.StatusNotFound, "NOT_FOUND", "Author or team not found")
+		} else {
+			h.logger.ErrorContext(ctx, "internal server error", "error", err)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
 		}
 		return
 	}
@@ -68,7 +78,12 @@ func (h *PullRequestHandler) MergePR(w http.ResponseWriter, r *http.Request) {
 	pr, err := h.service.MergePR(ctx, req.PullRequestID)
 	if err != nil {
 		// OpenAPI: 404 Not Found с кодом NOT_FOUND
-		respondError(w, http.StatusNotFound, "NOT_FOUND", "PR not found")
+		if errors.Is(err, service.ErrPRNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "PR not found")
+		} else {
+			h.logger.ErrorContext(ctx, "internal server error", "error", err)
+			respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error")
+		}
 		return
 	}
 
